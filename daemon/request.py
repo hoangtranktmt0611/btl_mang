@@ -19,6 +19,8 @@ request settings (cookies, auth, proxies).
 """
 from .dictionary import CaseInsensitiveDict
 
+DEBUG = False  # set True only when debugging
+
 class Request():
     """The fully mutable "class" `Request <Request>` object,
     containing the exact bytes that will be sent to the server.
@@ -74,7 +76,8 @@ class Request():
                 return "GET", "/index.html", "HTTP/1.1"
 
             first_line = lines[0].strip()
-            print(f"[Request] Raw first line: {first_line}")
+            if DEBUG:
+                print(f"[Request] Raw first line: {first_line}")
             parts = first_line.split()
 
             if len(parts) == 3:
@@ -111,7 +114,8 @@ class Request():
 
         # Prepare the request line from the request header
         self.method, self.path, self.version = self.extract_request_line(request)
-        print("[Request] {} path {} version {}".format(self.method, self.path, self.version))
+        if DEBUG:
+            print(f"[Request] {self.method} path {self.path} version {self.version}")
 
         #
         # @bksysnet Preapring the webapp hook with WeApRous instance

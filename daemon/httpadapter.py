@@ -167,17 +167,14 @@ class HttpAdapter:
             raw_req = msg.decode(errors="ignore")
         except Exception:
             raw_req = ""
-        # Minimal logging: show bytes received and header boundary position
-        print(f"[HttpAdapter] recv bytes={len(msg)} header_end={raw_req.find('\\r\\n\\r\\n')}")
-        # extra debug: show headers and content-length if present
-        header_end = raw_req.find("\r\n\r\n")
-        if header_end != -1:
-            headers_part = raw_req[:header_end]
-            print(f"[HttpAdapter] headers_part:\n{headers_part}")
-            for line in headers_part.split("\r\n"):
-                if line.lower().startswith("content-length:"):
-                    print(f"[HttpAdapter] parsed Content-Length: {line.split(':',1)[1].strip()}")
-                    break
+        # Minimal logging: only show bytes received when it's a POST /login (important)
+        try:
+            first_line = raw_req.splitlines()[0] if raw_req else ""
+        except Exception:
+            first_line = ""
+        if first_line.startswith("POST /login"):
+            print(f"[HttpAdapter] recv bytes={len(msg)} header_end={raw_req.find('\\r\\n\\r\\n')}")
+        # otherwise keep quiet (other requests are handled silently)
 
         # now we should have headers + (possibly) full body in msg/raw_req
         # Prepare request object: pass decoded raw string (raw_req) to match Request.prepare expectations

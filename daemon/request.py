@@ -18,6 +18,7 @@ This module provides a Request object to manage and persist
 request settings (cookies, auth, proxies).
 """
 from .dictionary import CaseInsensitiveDict
+from .session_store import get_user_from_session  # added import
 
 DEBUG = False  # set True only when debugging
 
@@ -48,6 +49,8 @@ class Request():
         "body",
         "routes",
         "hook",
+        "auth",    # added
+        "user",    # added
     ]
 
     def __init__(self):
@@ -67,6 +70,9 @@ class Request():
         self.routes = {}
         #: Hook point for routed mapped-path
         self.hook = None
+        # Authentication/user info (set by prepare if session cookie present)
+        self.user = None
+        self.auth = False
 
     def extract_request_line(self, request):
         try:
@@ -148,35 +154,67 @@ class Request():
         else:
             self.cookies = {}
 
-        #end todo Xuan
+        # --- session integration: check 'sessionid' cookie and resolve user ---
+        try:
+            sessionid = self.cookies.get('sessionid')
+            if sessionid:
+                user = get_user_from_session(sessionid)
+                if user:
+                    self.user = user
+                    self.auth = True
+                else:
+                    self.user = None
+                    self.auth = False
+            else:
+                self.user = None
+                self.auth = False
+        except Exception:
+            # on any error, default to unauthenticated
+            self.user = None
+            self.auth = False
+        # end session integration
 
         return
 
-    def prepare_body(self, data, files, json=None):
-        self.prepare_content_length(self.body)
+    def prepare_body(self, body, files=None, json=None):
+        # set body and content-length properly
         self.body = body
+        self.prepare_content_length(self.body)
         #
         # TODO prepare the request authentication
         #
-	# self.auth = ...
         return
-
 
     def prepare_content_length(self, body):
-        self.headers["Content-Length"] = "0"
-        #
-        # TODO prepare the request authentication
-        #
-	# self.auth = ...
-        return
-
-
-    def prepare_auth(self, auth, url=""):
-        #
-        # TODO prepare the request authentication
-        #
-	# self.auth = ...
+        # ensure headers exists
+        if self.headers is None:
+            self.headers = {}
+        length = 0
+        if body is None:
+            length = 0
+        else:
+            # bytes/bytearray
+            if isinstance(body, (bytes, bytearray)):
+                length = len(body)
+            # str -> encode to utf-8 to compute bytes length
+            elif isinstance(body, str):
+                length = len(body.encode('utf-8'))
+            else:
+                # fallback: try len()
+                try:
+                    length = len(body)
+                except Exception:
+                    length = 0
+        self.headers["Content-Length"] = str(length)
         return
 
     def prepare_cookies(self, cookies):
-            self.headers["Cookie"] = cookies
+        if self.headers is None:
+            self.headers = {}
+        # accept dict or cookie string
+        if isinstance(cookies, dict):
+            cookie_str = '; '.join(f"{k}={v}" for k, v in cookies.items())
+        else:
+            cookie_str = str(cookies)
+        self.headers["Cookie"] = cookie_str
+        return

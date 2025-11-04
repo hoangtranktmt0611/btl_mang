@@ -1,21 +1,105 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="vi">
 <head>
-    <title>bksysnet@hcmut welcome</title>
-
-    <meta charset="utf-8" />
-    <meta http-equiv="Content-type" content="text/html; charset=utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="css/styles.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hybrid Chat UI</title>
+  <link rel="stylesheet" href="css/chat.css" />
 </head>
-
 <body>
-<div>
-    <h1>bksysnet@hcmut  Domain</h1>
-    <p>This domain is for use in illustrative examples in documents.
-    </p>
-  
-       <img src="images/welcome.png" alt="bksysnet at HCMUT" width="500" height="600">  
-</div>
+  <div class="app">
+
+    <!-- GIAO DIỆN TRANG CHỦ -->
+    <div id="home" class="page active">
+      <h1>Hybrid Chat</h1>
+      <div class="home-buttons">
+        <button id="upload-btn">📁 Upload File</button>
+        <button id="chat-btn">💬 Chat</button>
+      </div>
+    </div>
+
+    <!-- GIAO DIỆN CHỌN CLIENT -->
+    <div id="client-list" class="page">
+      <h2>Danh sách client đang kết nối</h2>
+      <ul>
+        <li onclick="openChat('127.0.0.3')">127.0.0.3</li>
+        <li onclick="openChat('127.0.0.3')">127.0.0.3</li>
+        <li onclick="openChat('127.0.0.3')">Đức Hùng</li>
+      </ul>
+      <button class="back-btn" onclick="goHome()">⬅ Quay lại</button>
+    </div>
+
+    <!-- GIAO DIỆN CHAT -->
+    <div id="chat-window" class="page">
+      <div class="chat-header">
+        <button class="back-btn" onclick="showClientList()">⬅</button>
+        <h3 id="chat-name">Tên người chat</h3>
+      </div>
+      <div id="messages" class="messages"></div>
+      <div class="message-input">
+        <input id="msg-input" type="text" placeholder="Nhập tin nhắn..." />
+        <button id="send-btn">Gửi</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const pages = document.querySelectorAll(".page");
+    const messages = document.getElementById("messages");
+    const input = document.getElementById("msg-input");
+    const btn = document.getElementById("send-btn");
+    const chatName = document.getElementById("chat-name");
+
+    function showPage(id) {
+      pages.forEach(p => p.classList.remove("active"));
+      document.getElementById(id).classList.add("active");
+    }
+
+    function goHome() {
+      showPage("home");
+    }
+
+    document.getElementById("chat-btn").addEventListener("click", () => {
+      showPage("client-list");
+    });
+
+    function showClientList() {
+      showPage("client-list");
+    }
+
+    function openChat(name) {
+      chatName.textContent = name;
+      messages.innerHTML = "";
+      showPage("chat-window");
+    }
+
+    btn.addEventListener("click", sendMessage);
+    input.addEventListener("keypress", e => {
+      if (e.key === "Enter") sendMessage();
+    });
+
+    function sendMessage() {
+      const msg = input.value.trim();
+      if (!msg) return;
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble me";
+      bubble.textContent = msg;
+      messages.appendChild(bubble);
+
+      input.value = "";
+      messages.scrollTop = messages.scrollHeight;
+
+      // phản hồi giả
+      setTimeout(() => {
+        const reply = document.createElement("div");
+        reply.className = "bubble you";
+        reply.textContent = chatName.textContent + ": " + msg;
+        messages.appendChild(reply);
+        messages.scrollTop = messages.scrollHeight;
+      }, 600);
+    }
+  </script>
 </body>
 </html>

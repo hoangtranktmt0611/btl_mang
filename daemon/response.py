@@ -347,3 +347,5 @@ class Response():
         self._header = self.build_response_header(request)
 
         return self._header + self._content
+    
+    

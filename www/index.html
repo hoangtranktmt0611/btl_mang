@@ -1,105 +1,154 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hybrid Chat UI</title>
-  <link rel="stylesheet" href="css/chat.css" />
+<meta charset="UTF-8">
+<title>Chat App</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+}
+
+#chat-box {
+    background: #f9f9f9;
+    padding: 10px;
+    overflow-y: auto;
+    height: 300px;
+}
+
+#peer-list {
+    list-style: none;
+    padding-left: 0;
+}
+
+#peer-list li {
+    padding: 4px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+}
+
+#peer-list li:hover {
+    background-color: #f0f0f0;
+}
+
+input[type="text"] {
+    padding: 5px;
+}
+button {
+    padding: 5px 10px;
+}
+</style>
 </head>
 <body>
-  <div class="app">
+<h1>Chat App</h1>
 
-    <!-- GIAO DIỆN TRANG CHỦ -->
-    <div id="home" class="page active">
-      <h1>Hybrid Chat</h1>
-      <div class="home-buttons">
-        <button id="upload-btn">📁 Upload File</button>
-        <button id="chat-btn">💬 Chat</button>
-      </div>
-    </div>
+<div style="display:flex; gap:20px;">
 
-    <!-- GIAO DIỆN CHỌN CLIENT -->
-    <div id="client-list" class="page">
-      <h2>Danh sách client đang kết nối</h2>
-      <ul>
-        <li onclick="openChat('127.0.0.3')">127.0.0.3</li>
-        <li onclick="openChat('127.0.0.3')">127.0.0.3</li>
-        <li onclick="openChat('127.0.0.3')">Đức Hùng</li>
-      </ul>
-      <button class="back-btn" onclick="goHome()">⬅ Quay lại</button>
-    </div>
-
-    <!-- GIAO DIỆN CHAT -->
-    <div id="chat-window" class="page">
-      <div class="chat-header">
-        <button class="back-btn" onclick="showClientList()">⬅</button>
-        <h3 id="chat-name">Tên người chat</h3>
-      </div>
-      <div id="messages" class="messages"></div>
-      <div class="message-input">
-        <input id="msg-input" type="text" placeholder="Nhập tin nhắn..." />
-        <button id="send-btn">Gửi</button>
-      </div>
-    </div>
-
+  <!-- Danh sách peer online -->
+  <div>
+    <h3>Peers online</h3>
+    <ul id="peer-list"></ul>
+    <button id="refresh-peers">Refresh</button>
   </div>
 
-  <script>
-    const pages = document.querySelectorAll(".page");
-    const messages = document.getElementById("messages");
-    const input = document.getElementById("msg-input");
-    const btn = document.getElementById("send-btn");
-    const chatName = document.getElementById("chat-name");
+  <!-- Chat box -->
+  <div style="flex-grow:1;">
+    <h3>Chat</h3>
+    <div id="chat-box"></div>
+    <input type="text" id="message" placeholder="Type your message..." style="width:70%;">
+    <button id="send-broadcast">Send</button>
+  </div>
 
-    function showPage(id) {
-      pages.forEach(p => p.classList.remove("active"));
-      document.getElementById(id).classList.add("active");
+</div>
+
+<script>
+const chatBox = document.getElementById("chat-box");
+const messageInput = document.getElementById("message");
+const sendBroadcastBtn = document.getElementById("send-broadcast");
+const peerListEl = document.getElementById("peer-list");
+const refreshPeersBtn = document.getElementById("refresh-peers");
+
+let username = "guest"; // Lấy từ cookie hoặc login
+let host = "127.0.0.1"; // client host
+let port = 8000;         // client port (tùy config)
+
+function appendMessage(msg) {
+    const div = document.createElement("div");
+    div.textContent = msg;
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+// --- Gọi /add-list để đăng ký user ---
+async function addSelfToList() {
+    if (!username) return;
+    const body = { user: username, item: "hello", host, port };
+    try {
+        await fetch("/add-list", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        });
+    } catch(e) {
+        console.error("Add list failed:", e);
     }
+}
 
-    function goHome() {
-      showPage("home");
-    }
-
-    document.getElementById("chat-btn").addEventListener("click", () => {
-      showPage("client-list");
+// --- Lấy danh sách peer online ---
+async function refreshPeers() {
+    await addSelfToList(); // đảm bảo mình đã add trước khi fetch list
+    const res = await fetch("/get-list");
+    if (!res.ok) return;
+    const data = await res.json();
+    peerListEl.innerHTML = "";
+    data.list.forEach(peer => {
+        if (peer.user && peer.user !== username) {
+            const li = document.createElement("li");
+            li.textContent = peer.user;
+            li.addEventListener("click", () => {
+                const msg = prompt(`Send private message to ${peer.user}:`);
+                if (msg) sendPrivate(peer.user, msg);
+            });
+            peerListEl.appendChild(li);
+        }
     });
+}
 
-    function showClientList() {
-      showPage("client-list");
-    }
-
-    function openChat(name) {
-      chatName.textContent = name;
-      messages.innerHTML = "";
-      showPage("chat-window");
-    }
-
-    btn.addEventListener("click", sendMessage);
-    input.addEventListener("keypress", e => {
-      if (e.key === "Enter") sendMessage();
+// --- Gửi broadcast ---
+async function sendBroadcast() {
+    const msg = messageInput.value.trim();
+    if (!msg) return;
+    const body = { from: username, message: msg };
+    const res = await fetch("/broadcast-peer", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(body)
     });
+    appendMessage(`[You] ${msg}`);
+    messageInput.value = "";
+}
 
-    function sendMessage() {
-      const msg = input.value.trim();
-      if (!msg) return;
+// --- Gửi tin nhắn riêng ---
+async function sendPrivate(target, msg) {
+    const body = { from: username, to: target, message: msg };
+    await fetch("/send-peer", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(body)
+    });
+    appendMessage(`[You → ${target}] ${msg}`);
+}
 
-      const bubble = document.createElement("div");
-      bubble.className = "bubble me";
-      bubble.textContent = msg;
-      messages.appendChild(bubble);
+// --- Event listeners ---
+sendBroadcastBtn.addEventListener("click", sendBroadcast);
+refreshPeersBtn.addEventListener("click", refreshPeers);
 
-      input.value = "";
-      messages.scrollTop = messages.scrollHeight;
+// --- Load danh sách peer khi mở trang ---
+refreshPeers();
 
-      // phản hồi giả
-      setTimeout(() => {
-        const reply = document.createElement("div");
-        reply.className = "bubble you";
-        reply.textContent = chatName.textContent + ": " + msg;
-        messages.appendChild(reply);
-        messages.scrollTop = messages.scrollHeight;
-      }, 600);
-    }
-  </script>
+// --- Tự động refresh peer mỗi 5 giây ---
+setInterval(refreshPeers, 5000);
+</script>
+
 </body>
 </html>

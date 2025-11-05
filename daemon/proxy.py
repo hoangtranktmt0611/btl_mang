@@ -36,9 +36,9 @@ from .dictionary import CaseInsensitiveDict
 #: A dictionary mapping hostnames to backend IP and port tuples.
 #: Used to determine routing targets for incoming requests.
 PROXY_PASS = {
-    "192.168.56.103:8080": ('192.168.56.103', 9000),
-    "app1.local": ('192.168.56.103', 9001),
-    "app2.local": ('192.168.56.103', 9002),
+    "127.0.0.1:8080": ('127.0.0.1', 9000),
+    "app1.local": ('127.0.0.1', 9001),
+    "app2.local": ('127.0.0.1', 9002),
 }
 
 
@@ -105,7 +105,7 @@ def resolve_routing_policy(hostname, routes):
             # Use a dummy host to raise an invalid connection
             proxy_host = '127.0.0.1'
             proxy_port = '9000'
-        elif len(value) == 1:
+        elif len(proxy_map) == 1:
             proxy_host, proxy_port = proxy_map[0].split(":", 2)
         #elif: # apply the policy handling 
         #   proxy_map
@@ -148,7 +148,7 @@ def handle_client(ip, port, conn, addr, routes):
             chunk = conn.recv(4096)
             if not chunk:
                 break
-        request += chunk
+            request += chunk
     except socket.timeout:
         pass
     request = request.decode(errors="ignore")
@@ -212,6 +212,10 @@ def run_proxy(ip, port, routes):
             #        using multi-thread programming with the
             #        provided handle_client routine
             #
+            conn, addr = proxy.accept()
+            t = threading.Thread(target=handle_client, args=(ip, port, conn, addr, routes))
+            t.daemon = True
+            t.start()
     except socket.error as e:
       print("Socket error: {}".format(e))
 

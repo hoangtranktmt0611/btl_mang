@@ -453,15 +453,15 @@ class HttpAdapter:
                 body_resp = json.dumps(resp)
                 headers = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {len(body_resp)}\r\nConnection: close\r\n\r\n"
                 conn.sendall(headers.encode() + body_resp.encode())
-
                 handled = True
+                return
             except Exception as e:
                 body_bytes = f"<h1>500 Internal Server Error</h1><p>{e}</p>".encode()
                 headers = f"HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\nContent-Length: {len(body_bytes)}\r\nConnection: close\r\n\r\n"
                 conn.sendall(headers + body_bytes)
                 handled = True
-            finally:
                 conn.close()
+                return
 
 ##########################################################
         # --- /connect-peer ---

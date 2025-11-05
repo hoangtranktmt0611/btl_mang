@@ -1,77 +1,69 @@
-import socket
 import threading
-import requests
-import json
+import socket
 import time
+import json
+import requests
 
-# ===============================
-# Cấu hình
-# ===============================
-BACKEND_URL = "http://127.0.0.1:9000"   # backend server bạn đang chạy
-MY_HOST = "127.0.0.1"
-MY_PORT = 9101
-MY_NAME = "clientA"
+# =========================
+# Backend thread
+# =========================
+def start_backend():
+    from daemon import create_backend
+    create_backend("127.0.0.1", 9000)
 
-# ===============================
-# Thread lắng nghe tin nhắn P2P
-# ===============================
-def peer_listener(host, port):
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind((host, port))
-    s.listen(5)
-    print(f"[{MY_NAME}] Listening for peer messages on {host}:{port} ...")
-    while True:
-        conn, addr = s.accept()
-        data = conn.recv(1024).decode("utf-8")
-        if data:
-            print(f"[{MY_NAME}] Received: {data}")
-        conn.close()
+# =========================
+# Peer thread
+# =========================
+def start_peer(name, port, peer_name=None, message=None):
+    # listener
+    def listener():
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(("127.0.0.1", port))
+        s.listen(5)
+        print(f"[{name}] Listening on 127.0.0.1:{port}")
+        while True:
+            conn, addr = s.accept()
+            data = conn.recv(1024).decode()
+            if data:
+                print(f"[{name}] Received: {data}")
+            conn.close()
 
-# ===============================
-# Khởi động listener trong thread riêng
-# ===============================
-thread = threading.Thread(target=peer_listener, args=(MY_HOST, MY_PORT), daemon=True)
-thread.start()
-time.sleep(1)
-
-# ===============================
-# Đăng ký bản thân vào server
-# ===============================
-print(f"[{MY_NAME}] Registering to backend...")
-
-add_data = {
-    "user": MY_NAME,
-    "item": "active_peerA",
-    "host": MY_HOST,
-    "port": MY_PORT
-}
-r = requests.post(f"{BACKEND_URL}/add-list", json=add_data)
-print("ADD-LIST RESPONSE:", r.status_code, r.text)
-
-# ===============================
-# Kết nối tới 1 peer khác (ví dụ: clientB)
-# ===============================
-connect_data = {"peer": "clientB"}
-r = requests.post(f"{BACKEND_URL}/connect-peer", json=connect_data)
-print("CONNECT-PEER RESPONSE:", r.status_code, r.text)
-
-# ===============================
-# Gửi broadcast tin nhắn
-# ===============================
-broad_data = {"from": MY_NAME, "message": "Xin chào tất cả peer!"}
-r = requests.post(f"{BACKEND_URL}/broadcast-peer", json=broad_data)
-print("BROADCAST RESPONSE:", r.status_code, r.text)
-
-# ===============================
-# Gửi tin riêng tới clientB
-# ===============================
-send_data = {"from": MY_NAME, "to": "clientB", "message": "Hello B!"}
-r = requests.post(f"{BACKEND_URL}/send-peer", json=send_data)
-print("SEND-PEER RESPONSE:", r.status_code, r.text)
-
-# ===============================
-# Đợi nhận tin
-# ===============================
-print("\n--- Waiting for incoming messages ---\n")
-while True:
+    t = threading.Thread(target=listener, daemon=True)
+    t.start()
     time.sleep(1)
+
+    # register to backend
+    r = requests.post("http://127.0.0.1:9000/add-list",
+                      json={"user": name, "item":"active", "host":"127.0.0.1","port":port})
+    print(f"[{name}] Register: {r.text}")
+
+    # connect to peer
+    if peer_name:
+        r = requests.post("http://127.0.0.1:9000/connect-peer",
+                          json={"peer": peer_name})
+        print(f"[{name}] Connect-peer: {r.text}")
+
+    # send private message
+    if peer_name and message:
+        r = requests.post("http://127.0.0.1:9000/send-peer",
+                          json={"from": name, "to": peer_name, "message": message})
+        print(f"[{name}] Send-peer response: {r.text}")
+
+    while True:
+        time.sleep(1)
+
+# =========================
+# Main test
+# =========================
+if __name__ == "__main__":
+    # start backend
+    threading.Thread(target=start_backend, daemon=True).start()
+    time.sleep(1)
+
+    # start peers
+    threading.Thread(target=start_peer, args=("app1", 9101, "app2", "Hello app2!"), daemon=True).start()
+    threading.Thread(target=start_peer, args=("app2", 9102), daemon=True).start()
+
+    # keep main alive
+    while True:
+        time.sleep(1)

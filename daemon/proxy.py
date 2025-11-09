@@ -35,11 +35,7 @@ from .dictionary import CaseInsensitiveDict
 
 #: A dictionary mapping hostnames to backend IP and port tuples.
 #: Used to determine routing targets for incoming requests.
-PROXY_PASS = {
-    "127.0.0.1:8080": ('127.0.0.1', 9000),
-    "app1.local": ('127.0.0.1', 9001),
-    "app2.local": ('127.0.0.1', 9002),
-}
+
 
 
 def forward_request(host, port, request):
@@ -155,9 +151,30 @@ def handle_client(ip, port, conn, addr, routes):
     #END XUAN added code
 
     # Extract hostname
+    hostname = None
     for line in request.splitlines():
         if line.lower().startswith('host:'):
             hostname = line.split(':', 1)[1].strip()
+            if hostname:
+                parts = hostname.split(':')
+              
+                if len(parts) == 2:
+                    host_part = parts[0]
+                    port_part = parts[1]
+                    if port_part == str(port) or port_part == '80':
+                        hostname = host_part
+                
+                if hostname not in routes and f'{hostname}:{port}' in routes:
+                     hostname = f'{hostname}:{port}'
+         
+            break 
+    if hostname is None:
+      
+        print("[Proxy] Error: Missing Host header")
+        response = b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n"
+        conn.sendall(response)
+        conn.close()
+        return
 
     print("[Proxy] {} at Host: {}".format(addr, hostname))
 
@@ -206,7 +223,6 @@ def run_proxy(ip, port, routes):
         proxy.listen(50)
         print("[Proxy] Listening on IP {} port {}".format(ip,port))
         while True:
-            conn, addr = proxy.accept()
             #
             #  TODO: implement the step of the client incomping connection
             #        using multi-thread programming with the

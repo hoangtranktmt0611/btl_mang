@@ -2,152 +2,302 @@
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<title>Chat App</title>
+<title>Chat App (Hybrid P2P Client)</title>
 <style>
-body {
-    font-family: Arial, sans-serif;
-    margin: 20px;
+/* --- Giữ nguyên CSS --- */
+body { font-family: Arial, sans-serif; margin: 20px; background: #f4f4f4; }
+h1, h3 { color: #333; }
+.container { display: flex; gap: 20px; }
+.sidebar, .main-chat { background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+.sidebar { width: 250px; }
+.main-chat { flex-grow: 1; display: flex; flex-direction: column; } /* Cột chính là flex */
+
+#peer-list { list-style: none; padding-left: 0; }
+#peer-list li {
+    padding: 8px;
+    border-bottom: 1px solid #eee;
+    display: flex; /* Bật flex cho li */
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
 }
+#peer-list li:hover { background-color: #f0f0f0; }
 
 #chat-box {
-    background: #f9f9f9;
+    background: #fdfdfd;
+    border: 1px solid #ddd;
     padding: 10px;
     overflow-y: auto;
-    height: 300px;
+    height: 150px; /* Nhỏ lại để nhường chỗ cho Private Chat */
+    font-family: monospace;
+    font-size: 12px;
 }
 
-#peer-list {
-    list-style: none;
-    padding-left: 0;
+#private-chat-area {
+    flex-grow: 1; /* Chiếm hết không gian còn lại */
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-top: 10px;
+    padding: 10px;
+    overflow-y: auto;
+    background: #eef; /* Màu khác để phân biệt */
 }
 
-#peer-list li {
-    padding: 4px;
-    cursor: pointer;
-    border-bottom: 1px solid #eee;
-}
-
-#peer-list li:hover {
-    background-color: #f0f0f0;
-}
-
-input[type="text"] {
-    padding: 5px;
-}
+input[type="text"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
 button {
-    padding: 5px 10px;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background-color: #38488f;
+    color: white;
 }
+button:hover { background-color: #2e3570; }
+.chat-action-btn { background-color: #28a745; font-size: 10px; padding: 4px 6px; margin-left: 5px; }
+.active-chat-indicator { color: red; font-weight: bold; }
 </style>
 </head>
 <body>
-<h1>Chat App</h1>
 
-<div style="display:flex; gap:20px;">
+<h1>Chat App (P2P Client)</h1>
 
-  <!-- Danh sách peer online -->
-  <div>
-    <h3>Peers online</h3>
-    <ul id="peer-list"></ul>
-    <button id="refresh-peers">Refresh</button>
-  </div>
+<div>
+    <label for="username">Your Name:</label>
+    <input type="text" id="username" value="Client_Web">
+    <button id="register-btn">Register (Call /add-list)</button>
+    <span id="chat-status"></span>
+</div>
 
-  <!-- Chat box -->
-  <div style="flex-grow:1;">
-    <h3>Chat</h3>
-    <div id="chat-box"></div>
-    <input type="text" id="message" placeholder="Type your message..." style="width:70%;">
-    <button id="send-broadcast">Send</button>
-  </div>
+<hr style="margin: 20px 0;">
+
+<div class="container">
+
+    <div class="sidebar">
+        <h3>Peers Online (P2P)</h3>
+        <ul id="peer-list"></ul>
+        <button id="refresh-peers">Refresh List</button>
+        
+        <h3>Log (Nhật ký)</h3>
+        <textarea id="log-box" readonly style="width: 100%; height: 200px; font-size: 10px;"></textarea>
+    </div>
+
+    <div class="main-chat">
+        <h3>Broadcast Channel</h3>
+        <div id="chat-box"></div> <h3 style="margin-top: 15px;">Private Chat Bubble: <span id="current-peer-name" style="color: blue;">(None)</span></h3>
+        <div id="private-chat-area"></div> <input type="text" id="message" placeholder="Type message..." style="width:70%;">
+        <button id="send-message-btn">Send</button>
+    </div>
 
 </div>
 
 <script>
 const chatBox = document.getElementById("chat-box");
+const privateChatArea = document.getElementById("private-chat-area");
+const currentPeerNameEl = document.getElementById("current-peer-name");
+const logBox = document.getElementById("log-box");
 const messageInput = document.getElementById("message");
-const sendBroadcastBtn = document.getElementById("send-broadcast");
+const sendMessageBtn = document.getElementById("send-message-btn");
 const peerListEl = document.getElementById("peer-list");
+const registerBtn = document.getElementById("register-btn");
+const usernameInput = document.getElementById("username");
 const refreshPeersBtn = document.getElementById("refresh-peers");
 
-let username = "guest"; // Lấy từ cookie hoặc login
-let host = "127.0.0.1"; // client host
-let port = 8000;         // client port (tùy config)
+let clientInfo = { user: "", host: "127.0.0.1", port: 0 }; 
+let lastMessageCount = 0;
+let isRegistered = false;
 
-function appendMessage(msg) {
-    const div = document.createElement("div");
-    div.textContent = msg;
-    chatBox.appendChild(div);
-    chatBox.scrollTop = chatBox.scrollHeight;
+// Trạng thái: Lưu trữ peer hiện tại để gửi tin nhắn riêng
+let currentPrivatePeer = null; 
+
+function log(msg) {
+    logBox.value += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+    logBox.scrollTop = logBox.scrollHeight;
 }
 
-// --- Gọi /add-list để đăng ký user ---
+function appendMessage(targetBox, user, msg, isSystem = false) {
+    const div = document.createElement("div");
+    const prefix = isSystem ? "SYSTEM" : user;
+    div.innerHTML = `<strong>[${prefix}]</strong> ${msg}`;
+    targetBox.appendChild(div);
+    targetBox.scrollTop = targetBox.scrollHeight;
+}
+
+// --- API 1: Đăng ký (Register) ---
 async function addSelfToList() {
-    if (!username) return;
-    const body = { user: username, item: "hello", host, port };
+    clientInfo.user = usernameInput.value;
+    if (!clientInfo.user) return;
+
+    const body = { user: clientInfo.user, item: "ONLINE", host: clientInfo.host, port: 0 }; // Port 0 vì là Web Client
+    
     try {
-        await fetch("/add-list", {
+        const response = await fetch("http://127.0.0.1:9000/add-list", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body)
         });
+
+        // --- DEBUG ---
+        const responseData = await response.json(); // Server trả về JSON
+        log(`DEBUG /add-list status: ${response.status}, response: ${JSON.stringify(responseData)}`);
+        // --- END DEBUG ---
+
+        log(`Registered as ${clientInfo.user}. Starting refresh loop.`);
+        isRegistered = true;
+        document.getElementById("chat-status").textContent = ` (Đã đăng ký)`;
+        
+        refreshPeers();
+        setInterval(refreshData, 3000); 
+
     } catch(e) {
-        console.error("Add list failed:", e);
+        log(`ERROR: Could not register with Tracker: ${e}`);
     }
 }
 
-// --- Lấy danh sách peer online ---
-async function refreshPeers() {
-    await addSelfToList(); // đảm bảo mình đã add trước khi fetch list
-    const res = await fetch("/get-list");
-    if (!res.ok) return;
-    const data = await res.json();
-    peerListEl.innerHTML = "";
-    data.list.forEach(peer => {
-        if (peer.user && peer.user !== username) {
-            const li = document.createElement("li");
-            li.textContent = peer.user;
-            li.addEventListener("click", () => {
-                const msg = prompt(`Send private message to ${peer.user}:`);
-                if (msg) sendPrivate(peer.user, msg);
-            });
-            peerListEl.appendChild(li);
+// --- API 2: Lấy dữ liệu (Chat Board Public và Peers) ---
+async function refreshData() {
+    if (!isRegistered) return;
+
+    let res;
+    try {
+        res = await fetch("http://127.0.0.1:9000/get-list");
+        if (!res.ok) { 
+            // Thêm log chi tiết khi lỗi
+            log(`ERROR: Tracker fetch failed. Status: ${res.status}`); 
+            return; 
         }
-    });
+        
+        const data = await res.json();
+        
+        // 1. CẬP NHẬT CHAT BOX CHUNG (Message Board Public)
+        if (data.list.length > lastMessageCount) {
+            
+            // --- DEBUG ---
+            // Chỉ log khi có dữ liệu mới để tránh spam log
+            log(`DEBUG /get-list: Found new data. Total items: ${data.list.length}`);
+            // --- END DEBUG ---
+
+            // Xóa và vẽ lại Chat Box (Đơn giản nhất cho Polling)
+            chatBox.innerHTML = "";
+            let uniqueUsers = new Set();
+            
+            data.list.forEach(entry => {
+                // Chỉ hiển thị tin nhắn (item khác ONLINE)
+                if (entry.item !== "ONLINE") { 
+                    appendMessage(chatBox, entry.user, entry.item);
+                }
+                uniqueUsers.add(entry.user);
+            });
+            lastMessageCount = data.list.length; 
+            
+            // 2. CẬP NHẬT PEER LIST VÀ USERS
+            peerListEl.innerHTML = "";
+            uniqueUsers.forEach(user => {
+                // Chỉ hiển thị peer khác mình
+                if (user !== clientInfo.user) {
+                    const li = document.createElement("li");
+                    li.textContent = user;
+                    
+                    const chatBtn = document.createElement("button");
+                    chatBtn.textContent = "Chat";
+                    chatBtn.className = "chat-action-btn";
+                    chatBtn.onclick = () => activatePrivateChat(user);
+                    
+                    li.appendChild(chatBtn);
+                    peerListEl.appendChild(li);
+                }
+            });
+        }
+    } catch(e) {
+        log(`ERROR /get-list failed: ${e}`);
+    }
 }
 
-// --- Gửi broadcast ---
-async function sendBroadcast() {
+// --- LOGIC CHAT RIÊNG ---
+function activatePrivateChat(peerName) {
+    currentPrivatePeer = peerName;
+    currentPeerNameEl.textContent = peerName;
+    
+    // Xóa nội dung chat cũ
+    privateChatArea.innerHTML = "";
+    appendMessage(privateChatArea, "SYSTEM", `Bong bóng chat riêng với ${peerName} được kích hoạt.`);
+}
+
+// --- (THÊM HÀM NÀY) ---
+// Hàm này được gọi bởi nút "Refresh List"
+function refreshPeers() {
+    log("Manual refresh triggered.");
+    refreshData();
+}
+// --- (HẾT PHẦN THÊM) ---
+
+
+// --- Gửi tin nhắn (Private hoặc Broadcast) ---
+async function sendMessage() {
     const msg = messageInput.value.trim();
-    if (!msg) return;
-    const body = { from: username, message: msg };
-    const res = await fetch("/broadcast-peer", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify(body)
-    });
-    appendMessage(`[You] ${msg}`);
+    if (!msg || !isRegistered) return;
+
+    if (currentPrivatePeer) {
+        // --- Gửi RIÊNG (Private Chat) ---
+        log(`Sending private message to ${currentPrivatePeer}...`);
+        const body = { from: clientInfo.user, to: currentPrivatePeer, message: msg };
+        
+        // Tái sử dụng logic send-peer
+        const response = await fetch("http://127.0.0.1:9000/send-peer", {
+            method: "POST",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify(body)
+        });
+        
+        // --- DEBUG ---
+        const responseData = await response.text(); // Server trả về HTML
+        log(`DEBUG /send-peer status: ${response.status}, response: ${responseData}`);
+        // --- END DEBUG ---
+
+        // Ghi lại trong bong bóng chat
+        appendMessage(privateChatArea, "You", msg);
+        
+    } else {
+        // --- Gửi CHUNG (Broadcast Channel) ---
+        log("Sending broadcast message...");
+        const body = { from: clientInfo.user, message: msg };
+        
+        // Tái sử dụng logic broadcast-peer
+        const response = await fetch("http://127.0.0.1:9000/broadcast-peer", {
+            method: "POST",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify(body)
+        });
+        
+        // --- DEBUG ---
+        const responseData = await response.text(); // Server trả về HTML
+        log(`DEBUG /broadcast-peer status: ${response.status}, response: ${responseData}`);
+        // --- END DEBUG ---
+        
+        // Ghi lại trong chat box chung
+        appendMessage(chatBox, "You", msg);
+    }
+    
     messageInput.value = "";
+    refreshData(); // Cập nhật ngay lập tức
 }
 
-// --- Gửi tin nhắn riêng ---
-async function sendPrivate(target, msg) {
-    const body = { from: username, to: target, message: msg };
-    await fetch("/send-peer", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify(body)
-    });
-    appendMessage(`[You → ${target}] ${msg}`);
-}
 
 // --- Event listeners ---
-sendBroadcastBtn.addEventListener("click", sendBroadcast);
-refreshPeersBtn.addEventListener("click", refreshPeers);
+registerBtn.addEventListener("click", addSelfToList);
+sendMessageBtn.addEventListener("click", sendMessage);
+refreshPeersBtn.addEventListener("click", refreshPeers); // Giờ hàm này đã tồn tại
 
-// --- Load danh sách peer khi mở trang ---
-refreshPeers();
+// Tắt Enter mặc định và dùng Enter để gửi
+messageInput.addEventListener("keypress", (e) => {
+    if (e.key === 'Enter') {
+        sendMessage();
+    }
+});
 
-// --- Tự động refresh peer mỗi 5 giây ---
-setInterval(refreshPeers, 5000);
+// Khởi tạo ban đầu
+window.onload = () => {
+    log("Client initialized. Click 'Register' to connect to Tracker.");
+};
 </script>
 
 </body>

@@ -42,6 +42,8 @@ def start_peer(name, port, peer_name=None, message=None):
         r = requests.post("http://127.0.0.1:9000/connect-peer",
                           json={"peer": peer_name})
         print(f"[{name}] Connect-peer: {r.text}")
+    r = requests.get("http://127.0.0.1:9000/get-list")
+    print(r.json())
 
     # send private message
     if peer_name and message:

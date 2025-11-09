@@ -274,7 +274,18 @@ class HttpAdapter:
                 conn.sendall(headers.encode() + body.encode())
                 conn.close()
                 return
-            
+        if req.method == "GET" and req.path == "/submit-info":
+            try:
+                with open(os.path.join("www", "submit-info.html"), "r", encoding="utf-8") as fh:
+                    body = fh.read()
+                headers = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+                conn.sendall(headers.encode() + body.encode())
+            except Exception as e:
+                body = f"<h1>500 Internal Server Error</h1><p>{e}</p>"
+                conn.sendall(b"HTTP/1.1 500 Internal Server Error\r\n\r\n" + body.encode())
+            conn.close()
+            return
+        
         if req.method == "POST" and req.path == "/submit-info":
             try:
                 header_end = raw_req.find("\r\n\r\n")
@@ -355,13 +366,18 @@ class HttpAdapter:
                 return
 
             # Gửi phản hồi thành công
-            body = f"<h1>Registration Successful</h1><p>Welcome, {username}!</p>"
-            headers = ("HTTP/1.1 200 OK\r\n"
-                    "Content-Type: text/html\r\n"
-                    "Content-Length: {}\r\n"
-                    "Set-Cookie: auth=true; Path=/; HttpOnly\r\n"
-                    "\r\n").format(len(body))
-            conn.sendall(headers.encode() + body.encode())
+            try:
+                with open(os.path.join("www", "index.html"), "r", encoding="utf-8") as fh:
+                    body = fh.read()
+                    headers = ("HTTP/1.1 200 OK\r\n"
+                               "Content-Type: text/html\r\n"
+                               "Set-Cookie: auth=true; Path=/; HttpOnly\r\n"
+                               "\r\n")
+                    conn.sendall(headers.encode() + body.encode())
+            except Exception as e:
+                body = f"<h1>500 Internal Server Error</h1><p>{e}</p>"
+                conn.sendall(b"HTTP/1.1 500 Internal Server Error\r\n\r\n" + body.encode())
+
             conn.close()
             return
 
@@ -640,7 +656,7 @@ class HttpAdapter:
                     s.connect((ip, port))
                     s.sendall(f"[Private] {sender}: {message}".encode("utf-8"))
                     s.close()
-                    body = f"<h1>Message sent</h1><p>{sender} → {target}</p>"
+                    body = f"<h1>Message sent</h1><p>{sender} to {target}</p>"
                     headers = ("HTTP/1.1 200 OK\r\n"
                             "Content-Type: text/html\r\n"
                             f"Content-Length: {len(body)}\r\n\r\n")
